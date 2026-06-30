@@ -14,15 +14,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch CPU
-RUN pip install --no-cache-dir torch==2.2.0 torchvision==0.17.0
+# PyTorch CPU-only (no CUDA binaries at all)
+RUN pip install --no-cache-dir torch==2.2.0+cpu torchvision==0.17.0+cpu --index-url https://download.pytorch.org/whl/cpu
 
 # Clone DECA + patch
 RUN git clone --depth 1 https://github.com/yfeng95/DECA.git /app/DECA && \
     cp -r /app/DECA/data /app/DECA/data_repo && \
     sed -i 's/LandmarksType._2D/LandmarksType.TWO_D/g' /app/DECA/decalib/datasets/detectors.py && \
     sed -i 's/LandmarksType._3D/LandmarksType.THREE_D/g' /app/DECA/decalib/datasets/detectors.py && \
-    sed -i "s/checkpoint = torch.load(model_path)/checkpoint = torch.load(model_path, map_location='cpu')/g" /app/DECA/decalib/deca.py
+    sed -i "s/checkpoint = torch.load(model_path)/checkpoint = torch.load(model_path, map_location='cpu')/g" /app/DECA/decalib/deca.py && \
+    sed -i 's/face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False)/face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False, device="cpu")/g' /app/DECA/decalib/datasets/detectors.py
 
 # pytorch3d CPU from tarball
 RUN pip install --no-cache-dir --no-build-isolation \
