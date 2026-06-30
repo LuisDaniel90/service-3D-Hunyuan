@@ -38,6 +38,9 @@ RUN pip install --no-cache-dir \
 
 ENV PYTHONPATH="/app/DECA:/app/src:${PYTHONPATH}"
 
+# Give write permissions to DECA data dir before switching user
+RUN chmod -R 777 /app/DECA/data
+
 # HuggingFace Spaces runs as user 1000
 RUN useradd -m -u 1000 user
 USER user
