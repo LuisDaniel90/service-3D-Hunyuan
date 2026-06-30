@@ -37,6 +37,8 @@ RUN pip install --no-cache-dir \
     trimesh pygltflib pillow
 
 ENV PYTHONPATH="/app/DECA:/app/src:${PYTHONPATH}"
+# Force CPU — prevents face_alignment/pytorch3d from trying CUDA
+ENV CUDA_VISIBLE_DEVICES=""
 
 # Give write permissions to DECA data dir before switching user
 RUN chmod -R 777 /app/DECA/data
