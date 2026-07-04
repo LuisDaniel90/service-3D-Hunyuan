@@ -14,18 +14,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential g++ \
     && rm -rf /var/lib/apt/lists/*
 
-# PyTorch CPU-only (no CUDA binaries at all)
-RUN pip install --no-cache-dir torch==2.2.0+cpu torchvision==0.17.0+cpu --index-url https://download.pytorch.org/whl/cpu
+# PyTorch CPU-only (no CUDA driver needed — GPU detection is handled in app code)
+RUN pip install --no-cache-dir torch==2.2.0+cpu torchvision==0.17.0+cpu \
+    --index-url https://download.pytorch.org/whl/cpu
 
-# Clone DECA + patch
+# Clone DECA + patch legacy API issues
 RUN git clone --depth 1 https://github.com/yfeng95/DECA.git /app/DECA && \
     cp -r /app/DECA/data /app/DECA/data_repo && \
     sed -i 's/LandmarksType._2D/LandmarksType.TWO_D/g' /app/DECA/decalib/datasets/detectors.py && \
     sed -i 's/LandmarksType._3D/LandmarksType.THREE_D/g' /app/DECA/decalib/datasets/detectors.py && \
-    sed -i "s/checkpoint = torch.load(model_path)/checkpoint = torch.load(model_path, map_location='cpu')/g" /app/DECA/decalib/deca.py && \
-    sed -i 's/face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False)/face_alignment.FaceAlignment(face_alignment.LandmarksType.TWO_D, flip_input=False, device="cpu")/g' /app/DECA/decalib/datasets/detectors.py
+    sed -i "s/checkpoint = torch.load(model_path)/checkpoint = torch.load(model_path, map_location='cpu')/g" /app/DECA/decalib/deca.py
 
-# pytorch3d CPU from tarball
+# pytorch3d from tarball (no git clone needed)
 RUN pip install --no-cache-dir --no-build-isolation \
     "pytorch3d @ https://github.com/facebookresearch/pytorch3d/archive/refs/tags/v0.7.6.tar.gz"
 
@@ -38,10 +38,8 @@ RUN pip install --no-cache-dir \
     trimesh pygltflib pillow
 
 ENV PYTHONPATH="/app/DECA:/app/src:${PYTHONPATH}"
-# Force CPU — prevents face_alignment/pytorch3d from trying CUDA
-ENV CUDA_VISIBLE_DEVICES=""
 
-# Give write permissions to DECA data dir before switching user
+# Permissions for DECA data dir
 RUN chmod -R 777 /app/DECA/data
 
 # HuggingFace Spaces runs as user 1000
@@ -49,12 +47,11 @@ RUN useradd -m -u 1000 user
 USER user
 ENV HOME=/home/user PATH=/home/user/.local/bin:$PATH
 
-# Copy app code
+# App code
 COPY --chown=user src /app/src
 COPY --chown=user entrypoint.sh /app/entrypoint.sh
 
-# Models are copied by entrypoint from /app/models (mounted or copied)
-# For HF Spaces: models are included in the repo
+# Models
 COPY --chown=user models /app/models
 
 EXPOSE 7860
