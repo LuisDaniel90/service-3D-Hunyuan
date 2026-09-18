@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # PyTorch CPU-only (no CUDA driver needed — GPU detection is handled in app code)
 RUN pip install --no-cache-dir torch==2.2.0+cpu torchvision==0.17.0+cpu \
-    --index-url https://download.pytorch.org/whl/cpu
+    --extra-index-url https://download.pytorch.org/whl/cpu
 
 # Clone DECA + patch legacy API issues
 RUN git clone --depth 1 https://github.com/yfeng95/DECA.git /app/DECA && \
