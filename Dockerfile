@@ -1,4 +1,4 @@
-FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-devel
+FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -20,11 +20,9 @@ RUN cd /app/Hunyuan3D-2 && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e .
 
-# Build custom rasterizer extensions (required for texture generation)
-RUN cd /app/Hunyuan3D-2/hy3dgen/texgen/custom_rasterizer && \
-    python setup.py install && \
-    cd /app/Hunyuan3D-2/hy3dgen/texgen/differentiable_renderer && \
-    python setup.py install
+# Install prebuilt custom rasterizer from HF Space (avoids CUDA compilation)
+RUN pip install --no-cache-dir \
+    "https://huggingface.co/spaces/tencent/Hunyuan3D-2.1/resolve/main/custom_rasterizer-0.1-cp310-cp310-linux_x86_64.whl"
 
 # RunPod SDK
 RUN pip install --no-cache-dir runpod~=1.7
