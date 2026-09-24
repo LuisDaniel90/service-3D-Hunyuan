@@ -1,17 +1,46 @@
 ---
-title: Vision360 DECA
+title: Vision360 3D
 emoji: 🧠
 colorFrom: blue
 colorTo: blue
-sdk: docker
-app_port: 7860
 pinned: false
 ---
 
-# Vision360 DECA — 3D Face Reconstruction API
+# Vision360 3D — RunPod Serverless Worker
 
-Microservicio de reconstrucción facial 3D basado en DECA.
+Worker GPU serverless que genera modelos 3D texturizados de rostros
+usando Hunyuan3D-2.1.
 
-**Endpoints:**
-- `GET /health` — estado del servicio
-- `POST /reconstruct` — recibe foto en base64, retorna GLB
+## Input
+
+```json
+{
+  "input": {
+    "views": [
+      { "pose": "front", "image_base64": "..." },
+      { "pose": "left", "image_base64": "..." },
+      { "pose": "right", "image_base64": "..." }
+    ]
+  }
+}
+```
+
+Poses válidas: `front`, `left45`, `right45`, `left`, `right`, `eyes` (ignorada).
+
+## Output
+
+```json
+{
+  "glb_base64": "...",
+  "size_bytes": 1234567
+}
+```
+
+## Deploy
+
+```bash
+docker build -t <tu-registry>/vision360-3d .
+docker push <tu-registry>/vision360-3d
+```
+
+En RunPod: Serverless → New Endpoint → Docker Image → seleccionar GPU (24GB+).
