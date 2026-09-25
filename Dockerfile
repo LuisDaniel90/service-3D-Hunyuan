@@ -15,7 +15,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Clone Hunyuan3D-2
 RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git /app/Hunyuan3D-2
 
-# Install base requirements + package
+# Pin numpy<2 (PyTorch 2.2 was compiled with numpy 1.x)
+# Pin diffusers==0.30.0 (newer versions need torch.xpu which is PyTorch 2.4+)
+RUN pip install --no-cache-dir "numpy<2" "diffusers==0.30.0"
+
+# Install Hunyuan3D-2 package + remaining deps
 RUN cd /app/Hunyuan3D-2 && \
     pip install --no-cache-dir -r requirements.txt && \
     pip install --no-cache-dir -e .
