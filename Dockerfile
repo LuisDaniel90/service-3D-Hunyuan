@@ -1,3 +1,21 @@
+# Stage 1: Compile CUDA extensions with devel image
+FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-devel AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git /build
+
+RUN cd /build/hy3dgen/texgen/custom_rasterizer && \
+    pip install --no-cache-dir ninja pybind11 && \
+    python setup.py bdist_wheel && \
+    ls dist/
+
+RUN cd /build/hy3dgen/texgen/differentiable_renderer && \
+    python setup.py bdist_wheel && \
+    ls dist/
+
+# Stage 2: Runtime image
 FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
 
 ENV PYTHONUNBUFFERED=1 \
@@ -8,7 +26,7 @@ ENV PYTHONUNBUFFERED=1 \
 
 WORKDIR /app
 
-# System dependencies (libGL for pymeshlab, libglib/libxcb for opencv)
+# System dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git build-essential \
     libgl1 libglib2.0-0 libxcb1 \
@@ -36,24 +54,24 @@ RUN pip install --no-cache-dir \
     "ninja==1.11.1.1" \
     "pybind11==2.13.4"
 
-# Clone and install Hunyuan3D-2 (no-deps to avoid overriding pinned versions)
+# Clone and install Hunyuan3D-2
 RUN git clone --depth 1 https://github.com/Tencent-Hunyuan/Hunyuan3D-2.git /app/Hunyuan3D-2 && \
     cd /app/Hunyuan3D-2 && pip install --no-cache-dir --no-deps -e .
 
-# Install prebuilt custom rasterizer
-RUN pip install --no-cache-dir --no-deps \
-    "https://huggingface.co/spaces/tencent/Hunyuan3D-2.1/resolve/main/custom_rasterizer-0.1-cp310-cp310-linux_x86_64.whl"
+# Install compiled CUDA extensions from builder stage
+COPY --from=builder /build/hy3dgen/texgen/custom_rasterizer/dist/*.whl /tmp/
+COPY --from=builder /build/hy3dgen/texgen/differentiable_renderer/dist/*.whl /tmp/
+RUN pip install --no-cache-dir /tmp/*.whl && rm -rf /tmp/*.whl
 
 # RunPod SDK
 RUN pip install --no-cache-dir runpod~=1.7
 
-# Verify critical imports work at build time
+# Verify ALL imports including texture pipeline
 RUN python -c "\
 import numpy; print(f'numpy {numpy.__version__}'); \
 import torch; print(f'torch {torch.__version__}'); \
-import diffusers; print(f'diffusers {diffusers.__version__}'); \
-import transformers; print(f'transformers {transformers.__version__}'); \
 from hy3dgen.shapegen import Hunyuan3DDiTFlowMatchingPipeline; print('shapegen OK'); \
+from hy3dgen.texgen import Hunyuan3DPaintPipeline; print('texgen OK'); \
 import runpod; print(f'runpod {runpod.__version__}'); \
 print('ALL IMPORTS OK')"
 
