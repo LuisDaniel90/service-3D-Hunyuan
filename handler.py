@@ -78,8 +78,6 @@ def _load_pipelines():
         _tex_pipeline = Hunyuan3DPaintPipeline.from_pretrained(
             "tencent/Hunyuan3D-2",
             subfolder="hunyuan3d-paint-v2-0",
-            use_safetensors=True,
-            torch_dtype=torch.float16,
         )
         _tex_pipeline.to("cuda")
         logger.info("Texture pipeline loaded.")
