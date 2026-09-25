@@ -59,7 +59,9 @@ print('ALL IMPORTS OK')"
 
 COPY handler.py /app/handler.py
 
-# Model weights are downloaded on first worker start (RunPod has fast connection)
-# This avoids slow builds and large Docker images
+# Pre-download model weights
+RUN python -c "\
+from huggingface_hub import snapshot_download; \
+snapshot_download('tencent/Hunyuan3D-2', allow_patterns=['hunyuan3d-dit-v2-0/*', 'hunyuan3d-paint-v2-0/*'])"
 
 CMD ["python", "-u", "/app/handler.py"]
