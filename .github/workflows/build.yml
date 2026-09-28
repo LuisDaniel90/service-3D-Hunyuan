@@ -1,0 +1,44 @@
+name: Build & Deploy
+
+on:
+  push:
+    branches: [runpod, huggingface]
+
+jobs:
+  # RunPod: build Docker image and push to GHCR (only on runpod branch)
+  runpod:
+    if: github.ref == 'refs/heads/runpod'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # HuggingFace: sync branch to HF Space (only on huggingface branch)
+  huggingface:
+    if: github.ref == 'refs/heads/huggingface'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Push to HuggingFace Space
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          git remote add hf https://ldanielcabreral:${HF_TOKEN}@huggingface.co/spaces/ldanielcabreral/vision360-deca
+          git push hf huggingface:main --force
