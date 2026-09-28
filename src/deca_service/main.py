@@ -6,6 +6,7 @@ from lateral photos.
 
 import base64
 import logging
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -13,12 +14,15 @@ from pathlib import Path
 import numpy as np
 import torch
 import trimesh
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from . import __version__
+
+SERVICE_TOKEN = os.environ.get("SERVICE_TOKEN", "")
+_enabled = True
 
 DECA_DIR = Path("/app/DECA")
 if str(DECA_DIR) not in sys.path:
@@ -140,19 +144,47 @@ class ReconstructRequest(BaseModel):
     views: list[PoseView] = Field(..., min_length=1, max_length=6)
 
 
+def _check_token(authorization: str | None):
+    if not SERVICE_TOKEN:
+        return
+    if authorization != f"Bearer {SERVICE_TOKEN}":
+        raise HTTPException(401, "Invalid token")
+
+
 @app.get("/health")
 def health():
     return {
         "status": "ok",
         "version": __version__,
+        "model": "deca",
+        "enabled": _enabled,
         "device": DEVICE,
         "gpu": torch.cuda.is_available(),
-        "gpu_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else None,
     }
 
 
+@app.post("/enable")
+def enable(authorization: str | None = Header(None)):
+    global _enabled
+    _check_token(authorization)
+    _enabled = True
+    return {"enabled": _enabled}
+
+
+@app.post("/disable")
+def disable(authorization: str | None = Header(None)):
+    global _enabled
+    _check_token(authorization)
+    _enabled = False
+    return {"enabled": _enabled}
+
+
 @app.post("/reconstruct")
-def reconstruct(req: ReconstructRequest):
+def reconstruct(req: ReconstructRequest, authorization: str | None = Header(None)):
+    _check_token(authorization)
+    if not _enabled:
+        raise HTTPException(503, "Service is disabled")
+
     view_images: list[tuple[str, bytes]] = []
     for i, view in enumerate(req.views):
         try:
