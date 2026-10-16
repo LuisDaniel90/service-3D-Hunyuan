@@ -87,7 +87,7 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
         database_path=db_path,
         image_path=images_dir,
         camera_mode=pycolmap.CameraMode.SINGLE,
-        sift_options=pycolmap.SiftExtractionOptions(max_num_features=8192),
+        extraction_options=pycolmap.FeatureExtractionOptions(max_num_features=8192),
     )
 
     logger.info("COLMAP: matching features (exhaustive)...")
