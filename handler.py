@@ -91,15 +91,10 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
     pycolmap.match_exhaustive(database_path=db_path)
 
     logger.info("COLMAP: incremental mapping (SfM)...")
-    mapper_opts = pycolmap.IncrementalPipelineOptions()
-    mapper_opts.min_num_matches = 10
-    mapper_opts.init_min_num_inliers = 15
-    mapper_opts.min_model_size = 3
     reconstructions = pycolmap.incremental_mapping(
         database_path=db_path,
         image_path=images_dir,
         output_path=sparse_dir,
-        options=mapper_opts,
     )
 
     if not reconstructions:
