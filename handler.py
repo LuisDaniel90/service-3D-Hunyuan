@@ -7,9 +7,12 @@ and returns a textured GLB mesh faithful to the real patient.
 
 import base64
 import logging
+import multiprocessing
 import tempfile
 import traceback
 from pathlib import Path
+
+multiprocessing.set_start_method("fork", force=True)
 
 import runpod
 
@@ -32,7 +35,7 @@ except Exception as e:
     logger.error(f"OpenCV import failed: {e}", exc_info=True)
 
 try:
-    import numpy as np  # noqa: F811
+    import numpy as np
     import trimesh
     import open3d as o3d
     logger.info("numpy, trimesh, open3d OK")
@@ -70,6 +73,22 @@ def extract_frames_from_video(video_path: Path, output_dir: Path, max_frames: in
     return count
 
 
+# ── Subprocess wrappers for crash-prone pycolmap C++ calls ───────────
+
+def _run_patch_match(dense_dir_str):
+    """Run patch_match_stereo in a child process (may segfault on exit)."""
+    import pycolmap as _pycolmap
+    _pycolmap.patch_match_stereo(workspace_path=Path(dense_dir_str))
+
+def _run_stereo_fusion(fused_path_str, dense_dir_str):
+    """Run stereo_fusion in a child process (may segfault on exit)."""
+    import pycolmap as _pycolmap
+    _pycolmap.stereo_fusion(
+        output_path=Path(fused_path_str),
+        workspace_path=Path(dense_dir_str),
+    )
+
+
 # ── COLMAP reconstruction pipeline ───────────────────────────────────
 
 def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
@@ -105,7 +124,6 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
     logger.info(f"SfM: {reconstructions[best].num_reg_images()} registered images, "
                 f"{reconstructions[best].num_points3D()} points")
 
-    # Write the best reconstruction for dense step
     best_sparse = sparse_dir / "0"
     best_sparse.mkdir(exist_ok=True)
     reconstructions[best].write(best_sparse)
@@ -117,21 +135,30 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
         image_path=images_dir,
     )
 
-    logger.info("COLMAP: patch match stereo (dense)...")
-    try:
-        pycolmap.patch_match_stereo(workspace_path=dense_dir)
-    except Exception as e:
-        logger.warning(f"patch_match_stereo raised: {e} — continuing anyway")
+    # patch_match_stereo and stereo_fusion run in child processes because
+    # pycolmap's C++ bindings can segfault during cleanup after completing.
+    # The child may die, but the output files survive on disk.
 
-    logger.info("COLMAP: stereo fusion...")
+    logger.info("COLMAP: patch match stereo (dense) — running in subprocess...")
+    p = multiprocessing.Process(target=_run_patch_match, args=(str(dense_dir),))
+    p.start()
+    p.join(timeout=600)
+    if p.is_alive():
+        p.kill()
+        p.join()
+        raise RuntimeError("patch_match_stereo timed out after 10 minutes")
+    logger.info(f"patch_match_stereo exited with code {p.exitcode}")
+
+    logger.info("COLMAP: stereo fusion — running in subprocess...")
     fused_path = dense_dir / "fused.ply"
-    try:
-        pycolmap.stereo_fusion(
-            output_path=fused_path,
-            workspace_path=dense_dir,
-        )
-    except Exception as e:
-        logger.warning(f"stereo_fusion raised: {e} — checking if fused.ply was written anyway")
+    p = multiprocessing.Process(target=_run_stereo_fusion, args=(str(fused_path), str(dense_dir)))
+    p.start()
+    p.join(timeout=120)
+    if p.is_alive():
+        p.kill()
+        p.join()
+        raise RuntimeError("stereo_fusion timed out after 2 minutes")
+    logger.info(f"stereo_fusion exited with code {p.exitcode}")
 
     if not fused_path.exists() or fused_path.stat().st_size < 1000:
         raise RuntimeError("Dense fusion produced empty result")
@@ -152,33 +179,27 @@ def pointcloud_to_glb(ply_path: Path, output_path: Path) -> None:
     if n_points < 100:
         raise RuntimeError(f"Too few points ({n_points}) for mesh reconstruction")
 
-    # Statistical outlier removal
     logger.info("Removing outliers...")
     pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
 
-    # Estimate normals
     logger.info("Estimating normals...")
     pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamHybrid(radius=0.02, max_nn=30))
     pcd.orient_normals_consistent_tangent_plane(k=15)
 
-    # Poisson surface reconstruction
     logger.info("Poisson surface reconstruction...")
     mesh, densities = o3d.geometry.TriangleMesh.create_from_point_cloud_poisson(
         pcd, depth=9, width=0, scale=1.1, linear_fit=False
     )
 
-    # Remove low-density vertices (noisy edges)
-    import numpy as np
-    densities = np.asarray(densities)
-    threshold = np.quantile(densities, 0.05)
-    vertices_to_remove = densities < threshold
+    densities_arr = np.asarray(densities)
+    threshold = np.quantile(densities_arr, 0.05)
+    vertices_to_remove = densities_arr < threshold
     mesh.remove_vertices_by_mask(vertices_to_remove)
 
     mesh.compute_vertex_normals()
 
     logger.info(f"Mesh: {len(mesh.vertices)} vertices, {len(mesh.triangles)} triangles")
 
-    # Convert to trimesh for GLB export (Open3D doesn't export GLB with vertex colors well)
     vertices = np.asarray(mesh.vertices)
     faces = np.asarray(mesh.triangles)
     colors = np.asarray(mesh.vertex_colors) if mesh.has_vertex_colors() else None
@@ -208,7 +229,6 @@ def handler(job):
 
             frame_count = 0
 
-            # Option 1: Video input (preferred — more frames, better reconstruction)
             video_b64 = job_input.get("video_base64")
             if video_b64:
                 video_ext = job_input.get("video_ext", "mp4")
@@ -217,7 +237,6 @@ def handler(job):
                 max_frames = job_input.get("max_frames", 40)
                 frame_count = extract_frames_from_video(video_path, images_dir, max_frames)
 
-            # Option 2: Multiple photos
             views = job_input.get("views", [])
             if views and frame_count == 0:
                 for i, view in enumerate(views):
@@ -235,10 +254,8 @@ def handler(job):
 
             logger.info(f"Starting reconstruction with {frame_count} images")
 
-            # Run COLMAP
             fused_ply = run_colmap_reconstruction(images_dir, workspace)
 
-            # Convert to GLB
             glb_path = tmp / "output.glb"
             pointcloud_to_glb(fused_ply, glb_path)
 
