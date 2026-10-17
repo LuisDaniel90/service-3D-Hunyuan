@@ -84,18 +84,22 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
     pycolmap.extract_features(
         database_path=db_path,
         image_path=images_dir,
-        camera_mode=pycolmap.CameraMode.SINGLE,
-        extraction_options=pycolmap.FeatureExtractionOptions(),
+        camera_mode=pycolmap.CameraMode.AUTO,
     )
 
     logger.info("COLMAP: matching features (exhaustive)...")
     pycolmap.match_exhaustive(database_path=db_path)
 
     logger.info("COLMAP: incremental mapping (SfM)...")
+    mapper_opts = pycolmap.IncrementalPipelineOptions()
+    mapper_opts.min_num_matches = 10
+    mapper_opts.init_min_num_inliers = 15
+    mapper_opts.min_model_size = 3
     reconstructions = pycolmap.incremental_mapping(
         database_path=db_path,
         image_path=images_dir,
         output_path=sparse_dir,
+        options=mapper_opts,
     )
 
     if not reconstructions:
@@ -119,22 +123,13 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
     )
 
     logger.info("COLMAP: patch match stereo (dense)...")
-    pycolmap.patch_match_stereo(
-        workspace_path=dense_dir,
-        options=pycolmap.PatchMatchOptions(
-            max_image_size=1600,
-            geom_consistency=True,
-        ),
-    )
+    pycolmap.patch_match_stereo(workspace_path=dense_dir)
 
     logger.info("COLMAP: stereo fusion...")
     fused_path = dense_dir / "fused.ply"
     pycolmap.stereo_fusion(
         output_path=fused_path,
         workspace_path=dense_dir,
-        options=pycolmap.StereoFusionOptions(
-            min_num_pixels=3,
-        ),
     )
 
     if not fused_path.exists() or fused_path.stat().st_size < 1000:
