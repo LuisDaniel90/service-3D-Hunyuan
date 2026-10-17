@@ -7,8 +7,6 @@ and returns a textured GLB mesh faithful to the real patient.
 
 import base64
 import logging
-import shutil
-import subprocess
 import tempfile
 import traceback
 from pathlib import Path
@@ -34,7 +32,7 @@ except Exception as e:
     logger.error(f"OpenCV import failed: {e}", exc_info=True)
 
 try:
-    import numpy as np
+    import numpy as np  # noqa: F811
     import trimesh
     import open3d as o3d
     logger.info("numpy, trimesh, open3d OK")
@@ -87,7 +85,7 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
         database_path=db_path,
         image_path=images_dir,
         camera_mode=pycolmap.CameraMode.SINGLE,
-        extraction_options=pycolmap.FeatureExtractionOptions(max_num_features=8192),
+        extraction_options=pycolmap.FeatureExtractionOptions(),
     )
 
     logger.info("COLMAP: matching features (exhaustive)...")
