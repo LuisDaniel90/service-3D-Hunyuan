@@ -118,14 +118,20 @@ def run_colmap_reconstruction(images_dir: Path, workspace: Path) -> Path:
     )
 
     logger.info("COLMAP: patch match stereo (dense)...")
-    pycolmap.patch_match_stereo(workspace_path=dense_dir)
+    try:
+        pycolmap.patch_match_stereo(workspace_path=dense_dir)
+    except Exception as e:
+        logger.warning(f"patch_match_stereo raised: {e} — continuing anyway")
 
     logger.info("COLMAP: stereo fusion...")
     fused_path = dense_dir / "fused.ply"
-    pycolmap.stereo_fusion(
-        output_path=fused_path,
-        workspace_path=dense_dir,
-    )
+    try:
+        pycolmap.stereo_fusion(
+            output_path=fused_path,
+            workspace_path=dense_dir,
+        )
+    except Exception as e:
+        logger.warning(f"stereo_fusion raised: {e} — checking if fused.ply was written anyway")
 
     if not fused_path.exists() or fused_path.stat().st_size < 1000:
         raise RuntimeError("Dense fusion produced empty result")
